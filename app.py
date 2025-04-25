@@ -1,12 +1,13 @@
-from openai import OpenAI
 import streamlit as st
 import pandas as pd
 import fitz  # PyMuPDF
-import openai
 import tempfile
 import os
+import ast
+from openai import OpenAI
 
-openai.api_key = st.secrets["OPENAI_API_KEY"]  # Add this in Streamlit secrets
+# Initialize OpenAI client
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 # Define expected columns in the CSV
 EXPECTED_COLUMNS = [
@@ -46,7 +47,6 @@ if uploaded_csv and uploaded_pdfs:
             doc.close()
             os.unlink(pdf_path)
 
-            # Send to GPT for structured extraction
             prompt = f"""
 You are a travel domain expert AI. Extract the following fields from this itinerary and return as a Python dictionary with keys matching:
 {EXPECTED_COLUMNS}
@@ -54,37 +54,29 @@ You are a travel domain expert AI. Extract the following fields from this itiner
 Text:
 {text}
 """
-            from openai import OpenAI
 
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+            try:
+                response = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=[
+                        {"role": "system", "content": "You are a travel data extraction assistant."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2
+                )
+                content = response.choices[0].message.content
+                data_dict = ast.literal_eval(content)
+                new_rows.append(data_dict)
 
-# inside your PDF loop
-try:
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are a travel data extraction assistant."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.2
-    )
-    content = response.choices[0].message.content
+            except Exception as e:
+                st.warning(f"Failed to process {pdf_file.name}: {e}")
 
-    # Be cautious with eval - you can replace with ast.literal_eval for safety
-    import ast
-    data_dict = ast.literal_eval(content)
-    new_rows.append(data_dict)
+        if new_rows:
+            new_df = pd.DataFrame(new_rows)
+            final_df = pd.concat([df, new_df], ignore_index=True)
 
-except Exception as e:
-    st.warning(f"Failed to process {pdf_file.name}: {e}")
+            st.success("New tour packages added successfully!")
+            st.dataframe(final_df.tail(len(new_rows)))
 
-        # Append new rows
-        new_df = pd.DataFrame(new_rows)
-        final_df = pd.concat([df, new_df], ignore_index=True)
-
-        st.success("New tour packages added successfully!")
-        st.dataframe(final_df.tail(len(new_rows)))
-
-        # Download final CSV
-        csv_out = final_df.to_csv(index=False).encode('utf-8')
-        st.download_button("Download Final CSV", data=csv_out, file_name="final_tour_packages.csv", mime="text/csv")
+            csv_out = final_df.to_csv(index=False).encode("utf-8")
+            st.download_button("Download Final CSV", data=csv_out, file_name="final_tour_packages.csv", mime="text/csv")
