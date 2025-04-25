@@ -4,10 +4,10 @@ import fitz  # PyMuPDF
 import tempfile
 import os
 import ast
-from openai import OpenAI
+import google.generativeai as genai
 
-# Initialize OpenAI client
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+# Load Gemini API key from Streamlit secrets
+genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
 
 # Define expected columns in the CSV
 EXPECTED_COLUMNS = [
@@ -21,8 +21,8 @@ EXPECTED_COLUMNS = [
     'accessibility_features'
 ]
 
-st.title("AI Tour Package Extractor")
-st.write("Upload your existing tour packages CSV and itinerary PDFs. The tool will extract details and append new rows to your CSV.")
+st.title("AI Tour Package Extractor (Gemini Version)")
+st.write("Upload your existing tour packages CSV and itinerary PDFs. The tool will extract details and append new rows to your CSV using Google's Gemini AI.")
 
 uploaded_csv = st.file_uploader("Upload Tour Packages CSV", type=["csv"])
 uploaded_pdfs = st.file_uploader("Upload Itinerary PDFs", type=["pdf"], accept_multiple_files=True)
@@ -34,6 +34,7 @@ if uploaded_csv and uploaded_pdfs:
         st.error("Your CSV file is missing one or more expected columns.")
     else:
         new_rows = []
+        model = genai.GenerativeModel("gemini-pro")
 
         for pdf_file in uploaded_pdfs:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -48,7 +49,7 @@ if uploaded_csv and uploaded_pdfs:
             os.unlink(pdf_path)
 
             prompt = f"""
-You are a travel domain expert AI. Extract the following fields from this itinerary and return as a Python dictionary with keys matching:
+You are a travel domain expert AI. Extract the following fields from this itinerary and return a Python dictionary (as plain text) with keys matching:
 {EXPECTED_COLUMNS}
 
 Text:
@@ -56,16 +57,8 @@ Text:
 """
 
             try:
-                response = client.chat.completions.create(
-                  model="gpt-3.5-turbo",
-
-                    messages=[
-                        {"role": "system", "content": "You are a travel data extraction assistant."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.2
-                )
-                content = response.choices[0].message.content
+                response = model.generate_content(prompt)
+                content = response.text
                 data_dict = ast.literal_eval(content)
                 new_rows.append(data_dict)
 
