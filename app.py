@@ -3,11 +3,7 @@ import pandas as pd
 import fitz  # PyMuPDF
 import tempfile
 import os
-import ast
-import google.generativeai as genai
-
-# Load Gemini API key from Streamlit secrets
-genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+import re
 
 # Define expected columns in the CSV
 EXPECTED_COLUMNS = [
@@ -21,11 +17,48 @@ EXPECTED_COLUMNS = [
     'accessibility_features'
 ]
 
-st.title("AI Tour Package Extractor (Gemini Version)")
-st.write("Upload your existing tour packages CSV and itinerary PDFs. The tool will extract details and append new rows to your CSV using Google's Gemini AI.")
+st.title("Tour Package Extractor (Rule-Based NLP Version)")
+st.write("Upload your existing tour packages CSV and itinerary PDFs. The tool will extract details and append new rows using offline rules.")
 
 uploaded_csv = st.file_uploader("Upload Tour Packages CSV", type=["csv"])
 uploaded_pdfs = st.file_uploader("Upload Itinerary PDFs", type=["pdf"], accept_multiple_files=True)
+
+
+def extract_info(text):
+    data = {col: "" for col in EXPECTED_COLUMNS}
+    
+    # Title from top line
+    lines = text.split('\n')
+    if lines:
+        data['title'] = lines[0].strip()
+
+    # Duration
+    duration_match = re.search(r'(\d+\s*Nights?\s*/\s*\d+\s*Days?)', text, re.IGNORECASE)
+    if duration_match:
+        data['duration'] = duration_match.group(1)
+
+    # Country detection (basic)
+    if 'bhutan' in text.lower():
+        data['country'] = 'Bhutan'
+    elif 'bali' in text.lower():
+        data['country'] = 'Indonesia'
+    elif 'andaman' in text.lower():
+        data['country'] = 'India'
+
+    # Cities or Destinations Covered
+    cities = re.findall(r'\b(?:Ubud|Kuta|Port Blair|Havelock|Neil Island|Paro|Thimphu|Punakha)\b', text)
+    data['cities'] = ', '.join(sorted(set(cities)))
+
+    # Inclusions / Exclusions (basic headers)
+    inclusions = re.search(r'Inclusions\s*:?\s*(.*?)\s*(Exclusions|Excludes|Does not include)', text, re.DOTALL | re.IGNORECASE)
+    if inclusions:
+        data['inclusions'] = inclusions.group(1).strip().replace('\n', ', ')
+
+    exclusions = re.search(r'(Exclusions|Excludes|Does not include)\s*:?\s*(.*?)\s*(\n\n|$)', text, re.DOTALL | re.IGNORECASE)
+    if exclusions:
+        data['exclusions'] = exclusions.group(2).strip().replace('\n', ', ')
+
+    return data
 
 if uploaded_csv and uploaded_pdfs:
     df = pd.read_csv(uploaded_csv)
@@ -34,11 +67,6 @@ if uploaded_csv and uploaded_pdfs:
         st.error("Your CSV file is missing one or more expected columns.")
     else:
         new_rows = []
-
-        try:
-            model = genai.GenerativeModel("models/gemini-pro")
-        except Exception as e:
-            st.error(f"Gemini model initialization failed: {e}")
 
         for pdf_file in uploaded_pdfs:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
@@ -52,19 +80,8 @@ if uploaded_csv and uploaded_pdfs:
             doc.close()
             os.unlink(pdf_path)
 
-            prompt = f"""
-You are a travel domain expert AI. Extract the following fields from this itinerary and return a Python dictionary (as plain text) with keys matching:
-{EXPECTED_COLUMNS}
-
-Text:
-{text}
-"""
-
             try:
-                chat = model.start_chat()
-                response = chat.send_message(prompt)
-                content = response.text
-                data_dict = ast.literal_eval(content)
+                data_dict = extract_info(text)
                 new_rows.append(data_dict)
             except Exception as e:
                 st.warning(f"Failed to process {pdf_file.name}: {e}")
