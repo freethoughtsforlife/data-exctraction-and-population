@@ -54,10 +54,11 @@ You are a travel domain expert AI. Extract the following fields from this itiner
 Text:
 {text}
 """
-            
-            try:
-             client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+            from openai import OpenAI
 
+client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+
+# inside your PDF loop
 try:
     response = client.chat.completions.create(
         model="gpt-4",
@@ -68,16 +69,14 @@ try:
         temperature=0.2
     )
     content = response.choices[0].message.content
-    data_dict = eval(content)
+
+    # Be cautious with eval - you can replace with ast.literal_eval for safety
+    import ast
+    data_dict = ast.literal_eval(content)
     new_rows.append(data_dict)
 
 except Exception as e:
     st.warning(f"Failed to process {pdf_file.name}: {e}")
-
-                data_dict = eval(content)
-                new_rows.append(data_dict)
-            except Exception as e:
-                st.warning(f"Failed to process {pdf_file.name}: {e}")
 
         # Append new rows
         new_df = pd.DataFrame(new_rows)
