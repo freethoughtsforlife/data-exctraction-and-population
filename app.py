@@ -34,7 +34,11 @@ if uploaded_csv and uploaded_pdfs:
         st.error("Your CSV file is missing one or more expected columns.")
     else:
         new_rows = []
-        model = genai.GenerativeModel("gemini-pro")
+
+        try:
+            model = genai.GenerativeModel("models/gemini-pro")
+        except Exception as e:
+            st.error(f"Gemini model initialization failed: {e}")
 
         for pdf_file in uploaded_pdfs:
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
