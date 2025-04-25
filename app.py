@@ -58,12 +58,10 @@ Text:
 
             try:
                 chat = model.start_chat()
-response = chat.send_message(prompt)
-
+                response = chat.send_message(prompt)
                 content = response.text
                 data_dict = ast.literal_eval(content)
                 new_rows.append(data_dict)
-
             except Exception as e:
                 st.warning(f"Failed to process {pdf_file.name}: {e}")
 
