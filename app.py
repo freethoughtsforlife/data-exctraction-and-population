@@ -4,6 +4,7 @@ import fitz  # PyMuPDF
 import tempfile
 import os
 import re
+from datetime import datetime
 
 # Define expected columns in the CSV
 EXPECTED_COLUMNS = [
@@ -17,8 +18,8 @@ EXPECTED_COLUMNS = [
     'accessibility_features'
 ]
 
-st.title("Tour Package Extractor (Rule-Based NLP Version)")
-st.write("Upload your existing tour packages CSV and itinerary PDFs. The tool will extract details and append new rows using offline rules.")
+st.title("Tour Package Extractor (Smart NLP + Bulk-Ready)")
+st.write("Upload your tour packages CSV and multiple itinerary PDFs. The tool extracts and appends new packages using enhanced rule-based logic.")
 
 uploaded_csv = st.file_uploader("Upload Tour Packages CSV", type=["csv"])
 uploaded_pdfs = st.file_uploader("Upload Itinerary PDFs", type=["pdf"], accept_multiple_files=True)
@@ -26,37 +27,71 @@ uploaded_pdfs = st.file_uploader("Upload Itinerary PDFs", type=["pdf"], accept_m
 
 def extract_info(text):
     data = {col: "" for col in EXPECTED_COLUMNS}
-    
-    # Title from top line
+
     lines = text.split('\n')
+    lower_text = text.lower()
+
+    # Title & description
     if lines:
         data['title'] = lines[0].strip()
+    data['description'] = ' '.join(lines[1:6]).strip()
 
     # Duration
     duration_match = re.search(r'(\d+\s*Nights?\s*/\s*\d+\s*Days?)', text, re.IGNORECASE)
     if duration_match:
         data['duration'] = duration_match.group(1)
 
-    # Country detection (basic)
-    if 'bhutan' in text.lower():
-        data['country'] = 'Bhutan'
-    elif 'bali' in text.lower():
-        data['country'] = 'Indonesia'
-    elif 'andaman' in text.lower():
-        data['country'] = 'India'
+    # Country detection
+    for keyword, country in {'bhutan': 'Bhutan', 'bali': 'Indonesia', 'andaman': 'India'}.items():
+        if keyword in lower_text:
+            data['country'] = country
+            break
 
-    # Cities or Destinations Covered
-    cities = re.findall(r'\b(?:Ubud|Kuta|Port Blair|Havelock|Neil Island|Paro|Thimphu|Punakha)\b', text)
-    data['cities'] = ', '.join(sorted(set(cities)))
+    # Cities
+    cities = ['Ubud', 'Kuta', 'Port Blair', 'Havelock', 'Neil Island', 'Paro', 'Thimphu', 'Punakha']
+    data['cities'] = ', '.join(sorted({c for c in cities if c.lower() in lower_text}))
 
-    # Inclusions / Exclusions (basic headers)
-    inclusions = re.search(r'Inclusions\s*:?\s*(.*?)\s*(Exclusions|Excludes|Does not include)', text, re.DOTALL | re.IGNORECASE)
-    if inclusions:
-        data['inclusions'] = inclusions.group(1).strip().replace('\n', ', ')
+    # Places
+    places = ['Tiger’s Nest', 'Dochula Pass', 'Tirta Empul', 'Tanah Lot', 'Tegenungan Waterfall', 'Ubud Art Market']
+    data['places'] = ', '.join(sorted({p for p in places if p.lower() in lower_text}))
 
-    exclusions = re.search(r'(Exclusions|Excludes|Does not include)\s*:?\s*(.*?)\s*(\n\n|$)', text, re.DOTALL | re.IGNORECASE)
-    if exclusions:
-        data['exclusions'] = exclusions.group(2).strip().replace('\n', ', ')
+    # Hotels
+    hotel_match = re.findall(r'(Hotel|Resort|Villa)\s+[A-Z][a-zA-Z]+', text)
+    if hotel_match:
+        data['hotels'] = ', '.join(set(hotel_match))
+
+    # Inclusions & Exclusions
+    inc = re.search(r'Inclusions\s*:?(.*?)\n(?:Exclusions|Excludes|Does not include)', text, re.DOTALL | re.IGNORECASE)
+    exc = re.search(r'(Exclusions|Excludes|Does not include)\s*:?(.*?)\n\n', text, re.DOTALL | re.IGNORECASE)
+    if inc:
+        data['inclusions'] = inc.group(1).strip().replace('\n', ', ')
+    if exc:
+        data['exclusions'] = exc.group(2).strip().replace('\n', ', ')
+
+    # Activities
+    activities = ['snorkeling', 'beach hopping', 'hiking', 'cultural tour', 'shopping', 'sightseeing', 'photography', 'trekking', 'dining', 'spa']
+    data['activities'] = ', '.join(sorted({a for a in activities if a in lower_text}))
+
+    # Food details
+    food_keywords = ['breakfast', 'lunch', 'dinner', 'meals included', 'candlelight dinner', 'welcome drink']
+    matched_food = [word for word in food_keywords if word in lower_text]
+    data['food_details'] = ', '.join(matched_food)
+
+    # Amenities
+    amenity_keywords = ['private pool', 'wifi', 'air conditioning', 'jacuzzi', 'beach access', 'spa access', 'room service']
+    matched_amenities = [a for a in amenity_keywords if a in lower_text]
+    data['amenities'] = ', '.join(matched_amenities)
+
+    # Itinerary block
+    itinerary_lines = [line for line in lines if re.match(r'Day\s*\d+', line, re.IGNORECASE)]
+    if itinerary_lines:
+        data['itinerary'] = '\n'.join(itinerary_lines)
+
+    # Defaults
+    data['category'] = 'Tour Package'
+    data['price'] = 'On Request'
+    data['created_at'] = datetime.now().isoformat()
+    data['updated_at'] = datetime.now().isoformat()
 
     return data
 
