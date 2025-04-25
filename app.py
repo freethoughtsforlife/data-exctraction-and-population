@@ -56,17 +56,23 @@ Text:
 """
             
             try:
-                client = openai.OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
+             client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-response = client.chat.completions.create(
-    model="gpt-4",
-    messages=[
-        {"role": "system", "content": "You are a travel data extraction assistant."},
-        {"role": "user", "content": prompt}
-    ],
-    temperature=0.2
-)
-content = response.choices[0].message.content
+try:
+    response = client.chat.completions.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are a travel data extraction assistant."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.2
+    )
+    content = response.choices[0].message.content
+    data_dict = eval(content)
+    new_rows.append(data_dict)
+
+except Exception as e:
+    st.warning(f"Failed to process {pdf_file.name}: {e}")
 
                 data_dict = eval(content)
                 new_rows.append(data_dict)
