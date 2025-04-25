@@ -1,0 +1,81 @@
+import streamlit as st
+import pandas as pd
+import fitz  # PyMuPDF
+import openai
+import tempfile
+import os
+
+openai.api_key = st.secrets["OPENAI_API_KEY"]  # Add this in Streamlit secrets
+
+# Define expected columns in the CSV
+EXPECTED_COLUMNS = [
+    'id', 'title', 'description', 'price', 'duration', 'category', 'locations', 'inclusions',
+    'exclusions', 'featured', 'image_url', 'gallery_images', 'itinerary', 'pdf_url',
+    'created_at', 'updated_at', 'country', 'activities', 'cities', 'places', 'hotels',
+    'flights_included', 'food_details', 'airport_transfer', 'guide_included', 'shopping_stops',
+    'is_group_tour', 'minimum_pax', 'room_occupancy', 'visa_guidance', 'language_support',
+    'difficulty_level', 'sustainability_rating', 'recommended_age_group', 'seasonal_availability',
+    'amenities', 'covid_safety_measures', 'cancellation_policy', 'special_requirements',
+    'accessibility_features'
+]
+
+st.title("AI Tour Package Extractor")
+st.write("Upload your existing tour packages CSV and itinerary PDFs. The tool will extract details and append new rows to your CSV.")
+
+uploaded_csv = st.file_uploader("Upload Tour Packages CSV", type=["csv"])
+uploaded_pdfs = st.file_uploader("Upload Itinerary PDFs", type=["pdf"], accept_multiple_files=True)
+
+if uploaded_csv and uploaded_pdfs:
+    df = pd.read_csv(uploaded_csv)
+
+    if not all(col in df.columns for col in EXPECTED_COLUMNS):
+        st.error("Your CSV file is missing one or more expected columns.")
+    else:
+        new_rows = []
+
+        for pdf_file in uploaded_pdfs:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(pdf_file.read())
+                pdf_path = tmp.name
+
+            text = ""
+            doc = fitz.open(pdf_path)
+            for page in doc:
+                text += page.get_text()
+            doc.close()
+            os.unlink(pdf_path)
+
+            # Send to GPT for structured extraction
+            prompt = f"""
+You are a travel domain expert AI. Extract the following fields from this itinerary and return as a Python dictionary with keys matching:
+{EXPECTED_COLUMNS}
+
+Text:
+{text}
+"""
+            
+            try:
+                response = openai.ChatCompletion.create(
+                    model="gpt-4-0125-preview",
+                    messages=[
+                        {"role": "system", "content": "You are a travel data extraction assistant."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2
+                )
+                content = response.choices[0].message['content']
+                data_dict = eval(content)
+                new_rows.append(data_dict)
+            except Exception as e:
+                st.warning(f"Failed to process {pdf_file.name}: {e}")
+
+        # Append new rows
+        new_df = pd.DataFrame(new_rows)
+        final_df = pd.concat([df, new_df], ignore_index=True)
+
+        st.success("New tour packages added successfully!")
+        st.dataframe(final_df.tail(len(new_rows)))
+
+        # Download final CSV
+        csv_out = final_df.to_csv(index=False).encode('utf-8')
+        st.download_button("Download Final CSV", data=csv_out, file_name="final_tour_packages.csv", mime="text/csv")
