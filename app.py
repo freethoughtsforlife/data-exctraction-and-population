@@ -57,7 +57,9 @@ Text:
 """
 
             try:
-                response = model.generate_content(prompt)
+                chat = model.start_chat()
+response = chat.send_message(prompt)
+
                 content = response.text
                 data_dict = ast.literal_eval(content)
                 new_rows.append(data_dict)
